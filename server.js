@@ -177,7 +177,8 @@ for (const update of data.result || []) {
   setTimeout(telegramPoll, 1000);
 }
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, "0.0.0.0", async () => {
   console.log("Servidor iniciado en puerto " + PORT);
+  await checkTelegram();
   telegramPoll();
 });
