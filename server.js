@@ -115,9 +115,14 @@ async function telegramPoll() {
       `https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?timeout=25&offset=${offset}`
     );
 
-    const data = await response.json();
+   const data = await response.json();
 
-    for (const update of data.result || []) {
+if (!data.ok) {
+  console.error("Telegram API:", data.description);
+  return;
+}
+
+for (const update of data.result || []) {
       offset = update.update_id + 1;
 
       const message = update.message;
