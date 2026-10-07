@@ -107,6 +107,28 @@ app.post("/api/photo/:token", async (req, res) => {
   }
 });
 
+async function checkTelegram() {
+  try {
+    const me = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/getMe`
+    );
+    const meData = await me.json();
+
+    console.log("Telegram conexión:", meData.ok ? "OK" : meData.description);
+
+    const webhook = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook?drop_pending_updates=true`
+    );
+    const webhookData = await webhook.json();
+
+    console.log(
+      "Webhook:",
+      webhookData.ok ? "eliminado correctamente" : webhookData.description
+    );
+  } catch (error) {
+    console.error("Telegram conexión:", error.message);
+  }
+}
 let offset = 0;
 
 async function telegramPoll() {
