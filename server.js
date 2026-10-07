@@ -1,183 +1,156 @@
 import express from "express";
-import multer from "multer";
 import crypto from "crypto";
-import dotenv from "dotenv";
-import FormData from "form-data";
-
-dotenv.config();
 
 const app = express();
-const port = Number(process.env.PORT || 3000);
-const botToken = process.env.BOT_TOKEN;
-const publicUrl = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
-const sessionMinutes = Number(process.env.SESSION_MINUTES || 30);
+const PORT = process.env.PORT || 3000;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const PUBLIC_URL = process.env.PUBLIC_URL;
+const sessions = new Map();
 
-if (!botToken) {
-  console.error("Falta BOT_TOKEN en .env");
+if (!BOT_TOKEN) {
+  console.error("Falta BOT_TOKEN");
   process.exit(1);
 }
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024 }
-});
+if (!PUBLIC_URL) {
+  console.error("Falta PUBLIC_URL");
+  process.exit(1);
+}
 
-// token de sesión -> { chatId, expiresAt }
-const sessions = new Map();
+app.use(express.json({ limit: "8mb" }));
 
-app.use(express.static("public"));
-app.use(express.json());
-
-function createSession(chatId) {
+function newSession(chatId) {
   const token = crypto.randomBytes(24).toString("hex");
   sessions.set(token, {
-    chatId: String(chatId),
-    expiresAt: Date.now() + sessionMinutes * 60 * 1000
+    chatId,
+    expires: Date.now() + 30 * 60 * 1000,
+    used: false
   });
   return token;
 }
 
 function getSession(token) {
   const s = sessions.get(token);
-  if (!s) return null;
-  if (Date.now() > s.expiresAt) {
-    sessions.delete(token);
-    return null;
-  }
+  if (!s || s.used || Date.now() > s.expires) return null;
   return s;
 }
 
-async function telegram(method, body) {
-  const response = await fetch(
-    `https://api.telegram.org/bot${botToken}/${method}`,
-    { method: "POST", body }
-  );
-  return response.json();
-}
-
-async function sendMessage(chatId, text) {
-  const body = new URLSearchParams({
-    chat_id: String(chatId),
-    text
-  });
-  return telegram("sendMessage", body);
-}
-
-async function sendPhoto(chatId, buffer, filename = "foto.jpg") {
-  const form = new FormData();
-  form.append("chat_id", String(chatId));
-  form.append("photo", buffer, {
-    filename,
-    contentType: "image/jpeg"
-  });
-
-  const response = await fetch(
-    `https://api.telegram.org/bot${botToken}/sendPhoto`,
-    {
-      method: "POST",
-      headers: form.getHeaders(),
-      body: form
-    }
-  );
-  return response.json();
-}
-
-async function handleUpdate(update) {
-  const msg = update.message;
-  if (!msg?.chat?.id) return;
-
-  const chatId = msg.chat.id;
-  const text = msg.text || "";
-
-  if (text === "/start" || text.startsWith("/start ")) {
-    const token = createSession(chatId);
-    const url = `${publicUrl || `http://localhost:${port}`}/capture/${token}`;
-
-    await sendMessage(
-      chatId,
-      "Pulsa el siguiente enlace para abrir la página de cámara. " +
-      "La página mostrará claramente una solicitud de permiso y solo podrá " +
-      "capturar una foto si la persona la acepta y pulsa el botón correspondiente:\\n\\n" +
-      url
-    );
-  }
-}
-
-async function poll() {
-  let offset = 0;
-
-  while (true) {
-    try {
-      const url =
-        `https://api.telegram.org/bot${botToken}/getUpdates` +
-        `?timeout=25&offset=${offset}`;
-
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.ok) {
-        for (const update of data.result) {
-          offset = update.update_id + 1;
-          await handleUpdate(update);
-        }
-      }
-    } catch (err) {
-      console.error("Error de polling:", err.message);
-      await new Promise(r => setTimeout(r, 3000));
-    }
-  }
-}
+app.get("/", (req, res) => {
+  res.send("Telegram camera bot is running.");
+});
 
 app.get("/capture/:token", (req, res) => {
-  const session = getSession(req.params.token);
-  if (!session) {
-    return res.status(404).send("Enlace caducado o no válido.");
+  if (!getSession(req.params.token)) {
+    return res.status(404).send("Enlace caducado.");
   }
 
-  res.sendFile(new URL("./capture.html", import.meta.url).pathname);
+  res.sendFile(process.cwd() + "/capture.html");
+});
 
-app.post("/api/photo/:token", upload.single("photo"), async (req, res) => {
+app.post("/api/photo/:token", async (req, res) => {
   const session = getSession(req.params.token);
 
   if (!session) {
-    return res.status(404).json({ ok: false, error: "Enlace caducado o no válido." });
+    return res.status(404).json({ ok: false });
   }
 
-  if (!req.file) {
-    return res.status(400).json({ ok: false, error: "No se recibió ninguna foto." });
+  const image = req.body?.image;
+
+  if (typeof image !== "string") {
+    return res.status(400).json({ ok: false });
+  }
+
+  const match = image.match(
+    /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/
+  );
+
+  if (!match) {
+    return res.status(400).json({ ok: false });
   }
 
   try {
-    const result = await sendPhoto(
-      session.chatId,
-      req.file.buffer,
-      "camera-photo.jpg"
+    const buffer = Buffer.from(match[2], "base64");
+    const type = match[1];
+
+    const form = new FormData();
+    form.append("chat_id", String(session.chatId));
+    form.append(
+      "photo",
+      new Blob([buffer], { type }),
+      "foto.jpg"
     );
 
+    form.append(
+      "caption",
+      "Foto enviada después de autorizar la cámara y pulsar Tomar foto."
+    );
+
+    const response = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`,
+      {
+        method: "POST",
+        body: form
+      }
+    );
+
+    const result = await response.json();
+
     if (!result.ok) {
-      console.error(result);
-      return res.status(502).json({ ok: false, error: "Telegram rechazó la foto." });
+      throw new Error(result.description);
     }
 
-    // Un enlace solo permite una captura.
-    sessions.delete(req.params.token);
-
+    session.used = true;
     res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: "No se pudo enviar la foto." });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ ok: false });
   }
 });
 
-app.get("/health", (_req, res) => {
-  res.json({ ok: true });
-});
+let offset = 0;
 
-app.listen(port, () => {
-  console.log(`Servidor escuchando en http://localhost:${port}`);
-  if (!publicUrl) {
-    console.warn("AVISO: configura PUBLIC_URL con tu URL HTTPS pública.");
+async function telegramPoll() {
+  try {
+    const response = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?timeout=25&offset=${offset}`
+    );
+
+    const data = await response.json();
+
+    for (const update of data.result || []) {
+      offset = update.update_id + 1;
+
+      const message = update.message;
+      if (!message?.chat?.id) continue;
+
+      if ((message.text || "").startsWith("/start")) {
+        const token = newSession(message.chat.id);
+        const link =
+          PUBLIC_URL.replace(/\/$/, "") + "/capture/" + token;
+
+        await fetch(
+          `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: message.chat.id,
+              text:
+                "Abre este enlace. La cámara solo se utilizará después de que la persona acepte el permiso del navegador y pulse «Tomar foto»:\n\n" +
+                link
+            })
+          }
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Telegram:", error.message);
   }
-});
 
-poll();
+  setTimeout(telegramPoll, 1000);
+}
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("Servidor iniciado en puerto " + PORT);
+  telegramPoll();
+});
