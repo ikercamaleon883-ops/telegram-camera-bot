@@ -134,8 +134,7 @@ app.get("/capture/:token", (req, res) => {
     return res.status(404).send("Enlace caducado o no válido.");
   }
 
-  res.sendFile(new URL("./public/capture.html", import.meta.url).pathname);
-});
+  res.sendFile(new URL("./capture.html", import.meta.url).pathname);
 
 app.post("/api/photo/:token", upload.single("photo"), async (req, res) => {
   const session = getSession(req.params.token);
