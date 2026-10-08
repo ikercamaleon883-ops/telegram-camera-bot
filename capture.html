@@ -68,12 +68,7 @@
         });
 
         // Esperamos a que la cámara tenga imagen.
-       const boton = document.getElementById("hacerFoto");
-
-boton.addEventListener("click", async () => {
-  // Capturar una foto
-  // Enviarla a /api/photo/:token
-});
+       await new Promise(resolve => setTimeout(resolve, 800));
 
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
