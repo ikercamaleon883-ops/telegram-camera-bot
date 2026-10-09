@@ -69,11 +69,8 @@
         });
 
         // Esperamos a que la cámara tenga imagen.
-       await new Promise(resolve => setInterval(() => { // Acción repetida
-       }, 1000);
+     await new Promise(resolve => setTimeout(resolve, 800));
 
-
-        
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
 
