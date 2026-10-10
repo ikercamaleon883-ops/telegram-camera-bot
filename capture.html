@@ -101,6 +101,25 @@
         console.error("Error o permiso de cámara rechazado:", error);
       }
     })();
+
+const boton1 = document.getElementById("boton1");
+const vista = document.getElementById("vista");
+const foto = document.getElementById("foto");
+
+boton1.addEventListener("click", async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false
+    });
+
+    vista.srcObject = stream;
+    await vista.play();
+  } catch (error) {
+    alert("No se pudo abrir la cámara trasera.");
+  }
+});
+    
   </script>
 
 <body>
